@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RootCodeAuthenticator</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        :root { 
+            --lime: #00ff66; 
+            --bg: #010801; 
+            --panel: rgba(0, 20, 10, 0.85);
+            --dim: #004422; 
+            --alert: #ff0033;
+            --neon-shadow: 0 0 15px rgba(0, 255, 102, 0.4);
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; background: var(--bg); color: var(--lime); font-family: 'Courier New', monospace; overflow-x: hidden; }
+
+        /* SECURITY PRELOADER */
+        #auth-overlay {
+            position: fixed; inset: 0; background: #000; z-index: 10000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            transition: transform 0.8s cubic-bezier(0.87, 0, 0.13, 1);
+        }
+        .shield-icon { width: 100px; height: 100px; fill: var(--lime); filter: drop-shadow(0 0 10px var(--lime)); margin-bottom: 30px; animation: breathe 2s infinite ease-in-out; }
+        @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); opacity: 0.6; } }
+
+        .login-box { background: #001a0a; padding: 25px; border: 1px solid var(--lime); text-align: center; box-shadow: var(--neon-shadow); width: 280px; }
+        .pin-input { width: 100%; background: #000; border: 1px solid var(--dim); color: var(--lime); padding: 15px; text-align: center; font-size: 24px; letter-spacing: 10px; outline: none; margin-bottom: 15px; }
+
+        /* MAIN APP */
+        #bg-canvas { position: fixed; top: 0; left: 0; z-index: -1; opacity: 0.2; }
+        .app { width: 100%; max-width: 450px; margin: 0 auto; background: var(--panel); backdrop-filter: blur(10px); border-left: 1px solid var(--dim); border-right: 1px solid var(--dim); display: flex; flex-direction: column; min-height: 100vh; }
+
+        .header { padding: 20px; text-align: center; font-size: 20px; letter-spacing: 1px; border-bottom: 2px solid var(--lime); font-weight: bold; background: #000; text-shadow: var(--neon-shadow); }
+        .action-bar { padding: 15px; }
+        .btn { width: 100%; padding: 12px; background: transparent; border: 1px solid var(--lime); color: var(--lime); font-weight: bold; cursor: pointer; font-size: 11px; letter-spacing: 2px; }
+        .btn:hover { background: var(--lime); color: #000; }
+
+        .input-group { padding: 0 15px 15px; border-bottom: 1px solid var(--dim); }
+        input { width: 100%; background: #000; border: 1px solid var(--dim); padding: 12px; color: #fff; margin-bottom: 8px; outline: none; font-family: monospace; }
+
+        .accounts-container { flex: 1; padding: 15px; overflow-y: auto; padding-bottom: 80px; }
+        .account-card { background: rgba(0,0,0,0.5); border: 1px solid var(--dim); padding: 15px; margin-bottom: 20px; border-left: 3px solid var(--lime); }
+        .acc-header { display: flex; justify-content: space-between; margin-bottom: 12px; font-weight: bold; font-size: 14px; }
+        
+        .code-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .code-box { 
+            border: 1px solid #113322; padding: 12px; text-align: center; border-radius: 4px; 
+            cursor: pointer; position: relative; transition: 0.2s; background: rgba(0, 255, 102, 0.02);
+        }
+        .code-box:active { transform: scale(0.95); background: rgba(0, 255, 102, 0.1); }
+        
+        .copy-icon {
+            position: absolute; top: 5px; right: 5px; width: 14px; height: 14px;
+            fill: var(--lime); opacity: 0.5;
+        }
+        .m-name { display: block; font-size: 18px; font-weight: bold; margin-bottom: 4px; }
+        .m-time { font-size: 10px; color: #555; font-weight: bold; }
+
+        .footer { padding: 15px; text-align: center; font-size: 10px; background: #000; border-top: 1px solid var(--dim); color: #444; }
+        #toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--lime); color: #000; padding: 10px 30px; font-weight: bold; border-radius: 50px; display: none; z-index: 11000; box-shadow: 0 0 20px var(--lime); }
+        #reader { width: 100%; display: none; margin-bottom: 10px; }
+        /* unvisited link */
+a:link {
+  color: red;
+}
+
+/* visited link */
+a:visited {
+  color: lime;
+}
+
+/* mouse over link */
+a:hover {
+  color: red;
+}
+
+/* selected link */
+a:active {
+  color: lime;
+}
+    </style>
+</head>
+<body>
+
+<div id="auth-overlay">
+    <svg class="shield-icon" viewBox="0 0 24 24">
+        <path d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M12,7C13.4,7 14.8,8.1 14.8,9.5V11H15.8V16H8.2V11H9.2V9.5C9.2,8.1 10.6,7 12,7M12,8.2C11.2,8.2 10.5,8.7 10.5,9.5V11H13.5V9.5C13.5,8.7 12.8,8.2 12,8.2Z"/>
+    </svg>
+    <div class="login-box">
+        <h2 style="font-size: 12px; margin-bottom: 15px;">RootCodeAuthenticator</h2>
+        <input type="password" id="pinField" class="pin-input" maxlength="3" placeholder="***" autofocus>
+        <div id="login-msg" style="font-size: 10px; color: var(--alert); display: none; margin-top: 10px;">INVALID_ACCESS_CODE</div>
+    </div>
+</div>
+
+<canvas id="bg-canvas"></canvas>
+<div id="toast">DATA_COPIED_TO_CLIPBOARD</div>
+
+<div class="app">
+    <div class="header">RootCodeAuthenticator</div>
+
+    <div class="action-bar">
+        <button class="btn" onclick="toggleScanner()">[ QR SCAN ]</button>
+    </div>
+    <div id="reader"></div>
+    
+    <div class="input-group">
+        <input id="accName" placeholder="> ACCOUNT_NAME">
+        <input id="accSecret" placeholder="> SECRET_KEY">
+        <button class="btn" onclick="saveAccount()">[ OK ]</button>
+    </div>
+
+    <div class="accounts-container" id="accountsList"></div>
+<center>
+<h3>System Core</h3>
+Authentication Code Generation System <a href="https://humayunshariarhimu.github.io/RootCode/">RootCode</a>
+Root 
+Authentication Security Hunting System 
+<a href="https://root-code-explorer.vercel.app/">RootCodeExplorer</a>
+</center>
+<br></br>
+    <div class="footer">
+        <a href="https://github.com/HumayunShariarHimu" style="color:var(--lime); text-decoration:none;">Humayun Shariar Himu</a>
+    </div>
+</div>
+
+<script>
+    // --- PIN SYSTEM ---
+    const pinField = document.getElementById('pinField');
+    pinField.addEventListener('input', (e) => {
+        if(e.target.value === '369') {
+            document.getElementById('auth-overlay').style.transform = 'translateY(-100%)';
+            setTimeout(() => document.getElementById('auth-overlay').style.display = 'none', 800);
+        } else if(e.target.value.length === 3) {
+            document.getElementById('login-msg').style.display = 'block';
+            setTimeout(() => { e.target.value = ''; document.getElementById('login-msg').style.display = 'none'; }, 1000);
+        }
+    });
+
+    // --- MATRIX EFFECT ---
+    const canvas = document.getElementById('bg-canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    const drops = Array(Math.floor(canvas.width/16)).fill(1);
+    function drawMatrix() {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.05)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#0F0"; ctx.font = "16px monospace";
+        drops.forEach((y, i) => {
+            ctx.fillText(Math.floor(Math.random()*2), i*16, y*16);
+            if(y*16 > canvas.height && Math.random() > 0.975) drops[i] = 0;
+            drops[i]++;
+        });
+    }
+    setInterval(drawMatrix, 50);
+
+    // --- TOTP LOGIC ---
+    const html5QrCode = new Html5Qrcode("reader");
+    let isScanning = false;
+    const b32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    const masks = ["Himu", "Neon", "Prince", "Dayan", "Hacker", "Root"];
+    let accounts = JSON.parse(localStorage.getItem('root_codes')) || [];
+
+    async function toggleScanner() {
+        if (!isScanning) {
+            document.getElementById('reader').style.display = 'block';
+            await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (text) => {
+                try {
+                    const url = new URL(text);
+                    const secret = new URLSearchParams(url.search).get('secret');
+                    if(secret) {
+                        document.getElementById('accName').value = decodeURIComponent(url.pathname.split('totp/')[1] || "QR_CODE");
+                        document.getElementById('accSecret').value = secret;
+                        saveAccount();
+                        html5QrCode.stop(); document.getElementById('reader').style.display = 'none'; isScanning = false;
+                    }
+                } catch(e) {}
+            });
+            isScanning = true;
+        } else {
+            html5QrCode.stop(); document.getElementById('reader').style.display = 'none'; isScanning = false;
+        }
+    }
+
+    function b32ToBuf(s) {
+        let bits = "", out = [];
+        s = s.replace(/=+$/, "").toUpperCase().replace(/\s/g, "");
+        for (let c of s) { let v = b32.indexOf(c); if (v >= 0) bits += v.toString(2).padStart(5, "0"); }
+        for (let i = 0; i + 8 <= bits.length; i += 8) out.push(parseInt(bits.slice(i, i + 8), 2));
+        return new Uint8Array(out);
+    }
+
+    async function generateTOTP(secret, offset = 0) {
+        try {
+            const key = b32ToBuf(secret);
+            const epoch = Math.floor(Date.now() / 1000 / 30) + offset;
+            const msg = new Uint8Array(8);
+            new DataView(msg.buffer).setUint32(4, epoch);
+            const cryptoKey = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+            const h = new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, msg));
+            const o = h[h.length - 1] & 0xf;
+            const code = ((h[o] & 0x7f) << 24) | ((h[o + 1] & 0xff) << 16) | ((h[o + 2] & 0xff) << 8) | (h[o + 3] & 0xff);
+            return (code % 1e6).toString().padStart(6, "0");
+        } catch(e) { return "000000"; }
+    }
+
+    function saveAccount() {
+        const name = document.getElementById('accName').value || "NODE";
+        const secret = document.getElementById('accSecret').value.trim();
+        if (!secret) return;
+        accounts.push({ name, secret });
+        localStorage.setItem('root_codes', JSON.stringify(accounts));
+        document.getElementById('accName').value = ""; document.getElementById('accSecret').value = "";
+        render();
+    }
+
+    function deleteAcc(idx) { if(confirm("DELETE?")) { accounts.splice(idx,1); localStorage.setItem('root_codes', JSON.stringify(accounts)); render(); } }
+
+    async function render() {
+        const list = document.getElementById('accountsList');
+        const timeRemain = 30 - (Math.floor(Date.now() / 1000) % 30);
+        list.innerHTML = "";
+        
+        for (let i = 0; i < accounts.length; i++) {
+            const acc = accounts[i];
+            const card = document.createElement('div');
+            card.className = 'account-card';
+            let gridHTML = `<div class="acc-header"><span>> ${acc.name} (${timeRemain}s)</span> <span onclick="deleteAcc(${i})" style="color:var(--alert); cursor:pointer">TERMINATE</span></div><div class="code-grid">`;
+            
+            for (let j = 0; j < 6; j++) {
+                const code = await generateTOTP(acc.secret, j);
+                gridHTML += `
+                    <div class="code-box" onclick="copyCode('${code}')">
+                        <svg class="copy-icon" viewBox="0 0 24 24">
+                            <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z"/>
+                        </svg>
+                        <span class="m-name">${masks[j]}</span>
+                        <span class="m-time">${j === 0 ? 'NOW' : '+' + (j * 30) + 's'}</span>
+                    </div>`;
+            }
+            card.innerHTML = gridHTML + `</div>`;
+            list.appendChild(card);
+        }
+    }
+
+    function copyCode(c) { 
+        navigator.clipboard.writeText(c); 
+        const t = document.getElementById('toast'); 
+        t.style.display='block'; 
+        setTimeout(()=>t.style.display='none', 1500); 
+    }
+    
+    setInterval(render, 1000);
+    render();
+</script>
+</body>
+</html>
